@@ -31,11 +31,7 @@ ISC.ISCNavTable = (url as text) as table =>
         withData = #table(
             {"Name", "Type", "Data"},
             {
-                {
-                    "Access Profiles",
-                    Schema.AccessProfileType,
-                    ISC.GetIndice(url, accessToken, "accessprofiles")
-                },
+                {"Access Profiles", Schema.AccessProfileType, ISC.GetIndice(url, accessToken, "accessprofiles")},
                 {
                     "Account Activities",
                     Schema.AccountActivityType,
@@ -101,42 +97,35 @@ ISC.PagedSearch = (url as text, accessToken as text, indice as text, schema as t
     Table.GenerateByPage(
         (previous) =>
             let
-                offset = if (previous = null) then "0" else Value.Metadata(previous)[NextOffset],
-                count = if (previous = null) then "10000" else Value.Metadata(previous)[Count],
+                searchAfter = if (previous = null) then null else Value.Metadata(previous)[searchAfter],
+                lastCount = if (previous = null) then 1000 else Value.Metadata(previous)[count],
                 page =
-                    if (
-                        Number.FromText(offset) < 10000
-                        and Value.Compare(Number.FromText(offset), Number.FromText(count)) < 0
-                    ) then
-                        ISC.SearchImpl(url, accessToken, indice, offset, schema)
+                    if (lastCount >= 1000) then
+                        ISC.SearchImpl(url, accessToken, indice, searchAfter, schema)
                     else
                         null
             in
                 page
     );
 
-ISC.SearchImpl = (url as text, accessToken as text, indice as text, offset as text, schema as type) =>
+ISC.SearchImpl = (url as text, accessToken as text, indice as text, searchAfter as nullable list, schema as type) =>
     let
-        limit = "250",
-        searchUrl = Uri.Combine(url, "/v3/search")
-            & "?"
-            & Uri.BuildQueryString([
-                count = "true",
-                offset = offset,
-                limit = limit
-            ]),
-        _url = Diagnostics.LogValue("Search URL", searchUrl),
         response = Web.Contents(
-            searchUrl,
+            url,
             [
+                RelativePath = "/v3/search",
+                Query = [
+                    limit = "1000"
+                ],
                 Content = Json.FromValue(
                     [
                         indices = {indice},
                         query = [
                             query = "*"
                         ],
-                        sort = {"created"},
-                        includeNested = true
+                        sort = {"created", "id"},
+                        includeNested = true,
+                        searchAfter = searchAfter
                     ]
                 ),
                 Headers = [
@@ -146,18 +135,17 @@ ISC.SearchImpl = (url as text, accessToken as text, indice as text, offset as te
                 ]
             ]
         ),
-        count = Value.Metadata(response)[Headers][#"X-Total-Count"],
-        nextOffset = Number.ToText(Value.Add(Number.FromText(limit), Number.FromText(offset))),
         json = Json.Document(response),
+        count = List.Count(json),
+        newSearchAfter = {List.Last(json)[created], List.Last(json)[id]},
         // expand all columns from the record
         asTable = Table.FromList(json, Splitter.SplitByNothing(), {"Column1"}),
         fields = Record.FieldNames(Type.RecordFields(Type.TableRow(schema))),
         expanded = Table.ExpandRecordColumn(asTable, "Column1", fields)
-        //expanded = Table.FromRecords(json)
     in
         expanded meta [
-            Count = count,
-            NextOffset = nextOffset
+            searchAfter = newSearchAfter,
+            count = count
         ];
 
 [DataSource.Kind = "ISC"]
@@ -273,9 +261,7 @@ ISC.GetPotentialRoles = (url as text, accessToken as text) as table =>
         withSessionId = Table.RenameColumns(withUrl, {"id", "sessionId"}),
         roleMiningSessionsFields = Record.FieldNames(Type.RecordFields(Type.TableRow(Schema.RoleMiningSessionType))),
         withData = Table.AddColumn(
-            withSessionId,
-            "Data",
-            each ISC.GetResource([Url], accessToken, "", Schema.PotentialRoleSummaryType)
+            withSessionId, "Data", each ISC.GetResource([Url], accessToken, "", Schema.PotentialRoleSummaryType)
         ),
         cleanedFromroleMiningSessionsColumns = Table.RemoveColumns(
             withData, roleMiningSessionsFields, MissingField.Ignore
