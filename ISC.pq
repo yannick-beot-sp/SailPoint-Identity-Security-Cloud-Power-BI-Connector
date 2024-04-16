@@ -68,9 +68,9 @@ ISC.ISCNavTable = (url as text) as table =>
 ISC.ISCNavTableType = type function (
     aPIURL as (
         type text meta [
-            Documentation.FieldCaption = "Identity Now API URL (https://{tenant}.api.ISC.com)",
-            Documentation.FieldDescription = "Identity Now API URL",
-            Documentation.SampleValues = {"https://{tenant}.api.ISC.com"}
+            Documentation.FieldCaption = "ISC API URL (https://{tenant}.api.identitynow.com)",
+            Documentation.FieldDescription = "ISC API URL",
+            Documentation.SampleValues = {"https://{tenant}.api.identitynow.com"}
         ]
     )
 ) as any;
